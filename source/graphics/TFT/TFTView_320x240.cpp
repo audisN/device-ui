@@ -653,6 +653,9 @@ void TFTView_320x240::init_screens(void)
 
     channelGroup = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     ui_events_init();
+#ifdef DEVICEUI_TX_OPTIONS
+    createTxOptions();
+#endif
 
     // load main screen
     lv_screen_load_anim(objects.main_screen, LV_SCR_LOAD_ANIM_NONE, 300, 0, false);
@@ -2840,6 +2843,122 @@ void TFTView_320x240::ui_event_region_button(lv_event_t *e)
         THIS->activeSettings = eRegion;
     }
 }
+
+#ifdef DEVICEUI_TX_OPTIONS
+// TX power (antenna dBm) offered by the board option: 27 dBm = 0.5 W, 30 dBm = 1 W
+static constexpr int8_t c_txPowerLow = 27;
+static constexpr int8_t c_txPowerHigh = 30;
+
+void TFTView_320x240::createTxOptions(void)
+{
+    // settings list entry right below "Modem Preset"
+    lv_obj_t *presetButton = objects.basic_settings_modem_preset_button;
+    lv_obj_t *button = lv_button_create(lv_obj_get_parent(presetButton));
+    lv_obj_move_to_index(button, lv_obj_get_index(presetButton) + 1);
+    lv_obj_set_size(button, LV_PCT(95), 30);
+    lv_obj_add_flag(button, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_remove_flag(button, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+    add_style_settings_button_style(button);
+    lv_obj_set_style_align(button, LV_ALIGN_TOP_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(button, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x4db270), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(button, lv_color_hex(0x015114), LV_PART_MAIN | LV_STATE_PRESSED);
+    txOptionsLabel = lv_label_create(button);
+    lv_obj_set_size(txOptionsLabel, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_label_set_long_mode(txOptionsLabel, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_align(txOptionsLabel, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(button, ui_event_tx_options_button, LV_EVENT_CLICKED, NULL);
+
+    // popup panel styled like the modem preset panel
+    txOptionsPanel = lv_obj_create(lv_obj_get_parent(objects.settings_modem_preset_panel));
+    lv_obj_set_pos(txOptionsPanel, LV_PCT(3), LV_PCT(20));
+    lv_obj_set_size(txOptionsPanel, 225, 160);
+    lv_obj_add_flag(txOptionsPanel, (lv_obj_flag_t)(LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_HIDDEN));
+    lv_obj_remove_flag(txOptionsPanel, LV_OBJ_FLAG_SCROLLABLE);
+    add_style_settings_panel_style(txOptionsPanel);
+    lv_obj_set_style_border_width(txOptionsPanel, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(txOptionsPanel, 12, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(txOptionsPanel, lv_color_hex(0x216ad8), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_align(txOptionsPanel, LV_ALIGN_TOP_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_t *label = lv_label_create(txOptionsPanel);
+    lv_label_set_text(label, "TX power");
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 4);
+    txPowerDropdown = lv_dropdown_create(txOptionsPanel);
+    lv_dropdown_set_options(txPowerDropdown, "0.5 W\n1 W");
+    lv_obj_set_width(txPowerDropdown, 100);
+    lv_obj_align(txPowerDropdown, LV_ALIGN_TOP_RIGHT, 0, -4);
+
+    label = lv_label_create(txOptionsPanel);
+    lv_label_set_text(label, "Duty cycle");
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 48);
+    txDutyDropdown = lv_dropdown_create(txOptionsPanel);
+    lv_dropdown_set_options(txDutyDropdown, "10 %\n100 %");
+    lv_obj_set_width(txDutyDropdown, 100);
+    lv_obj_align(txDutyDropdown, LV_ALIGN_TOP_RIGHT, 0, 40);
+
+    lv_obj_t *ok = lv_button_create(txOptionsPanel);
+    lv_obj_set_size(ok, 80, 30);
+    lv_obj_align(ok, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_t *okLabel = lv_label_create(ok);
+    lv_label_set_text(okLabel, "OK");
+    lv_obj_center(okLabel);
+    lv_obj_add_event_cb(ok, ui_event_tx_options_close, LV_EVENT_CLICKED, (void *)1);
+
+    lv_obj_t *cancel = lv_button_create(txOptionsPanel);
+    lv_obj_set_size(cancel, 80, 30);
+    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_t *cancelLabel = lv_label_create(cancel);
+    lv_label_set_text(cancelLabel, _("Cancel"));
+    lv_obj_center(cancelLabel);
+    lv_obj_add_event_cb(cancel, ui_event_tx_options_close, LV_EVENT_CLICKED, (void *)0);
+
+    updateTxOptionsLabel();
+}
+
+void TFTView_320x240::updateTxOptionsLabel(void)
+{
+    if (!txOptionsLabel)
+        return;
+    const meshtastic_Config_LoRaConfig &lora = db.config.lora;
+    char buf[40];
+    lv_snprintf(buf, sizeof(buf), "TX: %s, duty %s", lora.tx_power > c_txPowerLow ? "1 W" : "0.5 W",
+                lora.override_duty_cycle ? "100 %" : "10 %");
+    lv_label_set_text(txOptionsLabel, buf);
+}
+
+void TFTView_320x240::ui_event_tx_options_button(lv_event_t *e)
+{
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED && THIS->activeSettings == eNone) {
+        const meshtastic_Config_LoRaConfig &lora = THIS->db.config.lora;
+        lv_dropdown_set_selected(THIS->txPowerDropdown, lora.tx_power > c_txPowerLow ? 1 : 0);
+        lv_dropdown_set_selected(THIS->txDutyDropdown, lora.override_duty_cycle ? 1 : 0);
+        lv_obj_clear_flag(THIS->txOptionsPanel, LV_OBJ_FLAG_HIDDEN);
+        THIS->disablePanel(objects.controller_panel);
+        THIS->disablePanel(objects.tab_page_basic_settings);
+    }
+}
+
+void TFTView_320x240::ui_event_tx_options_close(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED)
+        return;
+    if (lv_event_get_user_data(e)) {
+        meshtastic_Config_LoRaConfig &lora = THIS->db.config.lora;
+        int8_t power = lv_dropdown_get_selected(THIS->txPowerDropdown) ? c_txPowerHigh : c_txPowerLow;
+        bool override = lv_dropdown_get_selected(THIS->txDutyDropdown) == 1;
+        if (power != lora.tx_power || override != lora.override_duty_cycle) {
+            lora.tx_power = power;
+            lora.override_duty_cycle = override;
+            THIS->controller->sendConfig(meshtastic_Config_LoRaConfig{lora}, THIS->ownNode);
+        }
+        THIS->updateTxOptionsLabel();
+    }
+    lv_obj_add_flag(THIS->txOptionsPanel, LV_OBJ_FLAG_HIDDEN);
+    THIS->enablePanel(objects.controller_panel);
+    THIS->enablePanel(objects.tab_page_basic_settings);
+}
+#endif
 
 void TFTView_320x240::ui_event_preset_button(lv_event_t *e)
 {
@@ -7302,6 +7421,9 @@ void TFTView_320x240::updateLoRaConfig(const meshtastic_Config_LoRaConfig &cfg)
     lv_label_set_text(objects.basic_settings_region_label, region);
 
     showLoRaFrequency(db.config.lora);
+#ifdef DEVICEUI_TX_OPTIONS
+    updateTxOptionsLabel();
+#endif
 
     if (db.config.lora.region != meshtastic_Config_LoRaConfig_RegionCode_UNSET) {
         // update channel names again now that region is known
