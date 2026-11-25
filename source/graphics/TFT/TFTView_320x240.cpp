@@ -676,6 +676,9 @@ void TFTView_320x240::init_screens(void)
         for (lv_obj_t *o : {objects.arrow_up_button, objects.arrow_down_button, objects.arrow_left_button,
                             objects.arrow_right_button, objects.nav_button})
             lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+        // and wider gaps between the location and +/- buttons (40 px high, 12 px apart) for fingers
+        lv_obj_set_y(objects.zoom_in_button, 52);
+        lv_obj_set_y(objects.zoom_out_button, 104);
     }
 
     // load main screen
