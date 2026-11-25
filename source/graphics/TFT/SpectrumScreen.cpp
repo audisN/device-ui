@@ -5,13 +5,11 @@
 #include <string.h>
 
 SpectrumScreen *SpectrumScreen::current = nullptr;
-uint8_t SpectrumScreen::mode = SPECTRUM_SWEEP;
 uint8_t SpectrumScreen::range = SPECTRUM_RANGE_SUBGHZ;
 uint16_t SpectrumScreen::stepKHz = 1000;
 uint32_t SpectrumScreen::startKHz[2] = {790000, 1500000};
 uint8_t SpectrumScreen::holdSec = 2;
 bool SpectrumScreen::showMax = false;
-uint32_t SpectrumScreen::fftCenterKHz = 869525;
 int16_t SpectrumScreen::dbLow = -120;
 int16_t SpectrumScreen::dbHigh = -40;
 
@@ -23,7 +21,7 @@ constexpr int Y_FREQ = H_HEADER;                 // window edge frequencies, abo
 constexpr int H_WF = 91;                         // waterfall
 constexpr int Y_CHART = Y_FREQ + 12, H_CHART = 240 - H_WF - Y_CHART;
 constexpr int Y_WF = Y_CHART + H_CHART;
-constexpr int TAP_PX = 8; // finger movement below this is a tap
+constexpr int TAP_PX = 8; // finger movement below this is not a swipe
 
 constexpr uint32_t C_BG = 0x0B0F14;
 constexpr uint32_t C_PANEL = 0x161B22;
@@ -63,16 +61,11 @@ void buildLut(void)
     }
 }
 
-// "869.625" (MHz with kHz) or "869.5253" for the FFT
-void formatHz(char *buf, size_t len, uint32_t hz, bool fine)
+// "869.625" (MHz with kHz)
+void formatHz(char *buf, size_t len, uint32_t hz)
 {
-    if (fine) {
-        const uint32_t h100 = (hz + 50) / 100; // 100 Hz units
-        lv_snprintf(buf, len, "%u.%04u", (unsigned)(h100 / 10000), (unsigned)(h100 % 10000));
-    } else {
-        const uint32_t khz = (hz + 500) / 1000;
-        lv_snprintf(buf, len, "%u.%03u", (unsigned)(khz / 1000), (unsigned)(khz % 1000));
-    }
+    const uint32_t khz = (hz + 500) / 1000;
+    lv_snprintf(buf, len, "%u.%03u", (unsigned)(khz / 1000), (unsigned)(khz % 1000));
 }
 
 lv_obj_t *makeLabel(lv_obj_t *parent, const lv_font_t *font, uint32_t color)
@@ -169,7 +162,7 @@ SpectrumScreen::~SpectrumScreen()
 
 uint16_t SpectrumScreen::columns(void) const
 {
-    return mode == SPECTRUM_FFT ? SPECTRUM_FFT_BINS : spectrumColumns(range, stepKHz);
+    return spectrumColumns(range, stepKHz);
 }
 
 void SpectrumScreen::build(void)
@@ -206,15 +199,15 @@ void SpectrumScreen::build(void)
     lv_obj_set_pos(waterfall, 0, Y_WF);
     clearWaterfall();
 
-    // window edges and mode, small, on the spectrum
+    // window edges, small, above the spectrum
     for (int i = 0; i < 2; i++)
         edgeLabel[i] = makeLabel(screen, &lv_font_montserrat_10, C_DIM);
     lv_obj_align(edgeLabel[0], LV_ALIGN_TOP_LEFT, 2, Y_FREQ);
     lv_obj_align(edgeLabel[1], LV_ALIGN_TOP_RIGHT, -2, Y_FREQ);
-    modeLabel = makeLabel(screen, &lv_font_montserrat_10, C_TEAL);
-    lv_obj_align(modeLabel, LV_ALIGN_TOP_MID, 0, Y_FREQ);
+    centerLabel = makeLabel(screen, &lv_font_montserrat_10, C_DIM);
+    lv_obj_align(centerLabel, LV_ALIGN_TOP_MID, 0, Y_FREQ);
 
-    // touch area over spectrum and waterfall: swipe = move the window, tap = FFT / back
+    // touch area over spectrum and waterfall: swipe = move the window
     lv_obj_t *touch = lv_obj_create(screen);
     lv_obj_remove_style_all(touch);
     lv_obj_set_pos(touch, 0, Y_CHART);
@@ -357,10 +350,7 @@ void SpectrumScreen::requestScan(void)
 {
     resetHold();
     lastRequestMs = lv_tick_get();
-    if (mode == SPECTRUM_FFT)
-        spectrumStartFft(fftCenterKHz);
-    else
-        spectrumStartSweep(range, stepKHz, startKHz[range]);
+    spectrumStartSweep(range, stepKHz, startKHz[range]);
 }
 
 void SpectrumScreen::onTimer(lv_timer_t *t)
@@ -383,10 +373,8 @@ void SpectrumScreen::update(void)
     if (!frame.active && lv_tick_elaps(lastRequestMs) > 2000)
         requestScan();
 
-    const bool matches = frame.active && frame.mode == mode &&
-                         (mode == SPECTRUM_FFT ? frame.centerHz == fftCenterKHz * 1000
-                                               : frame.range == range && frame.binHz == stepKHz * 1000u &&
-                                                     frame.startHz == startKHz[range] * 1000);
+    const bool matches = frame.active && frame.range == range && frame.binHz == stepKHz * 1000u &&
+                         frame.startHz == startKHz[range] * 1000;
     if (matches && (frame.sweeps != lastSweeps || frame.progress != lastProgress)) {
         if (frame.sweeps != lastSweeps && !pressed)
             drawWaterfallRow();
@@ -506,34 +494,26 @@ void SpectrumScreen::clearWaterfall(void)
 void SpectrumScreen::updateLabels(void)
 {
     char f[24], buf[48];
-    const bool fft = mode == SPECTRUM_FFT;
     if (!frame.active) {
         lv_label_set_text(peakLabel, "starting ...");
     } else if (frame.peak == SPECTRUM_NO_DATA || frame.peakHz == 0) {
         lv_label_set_text(peakLabel, "scanning ...");
     } else {
-        formatHz(f, sizeof(f), frame.peakHz, fft);
+        formatHz(f, sizeof(f), frame.peakHz);
         lv_snprintf(buf, sizeof(buf), "%s MHz  %d dBm", f, frame.peak / 2);
         lv_label_set_text(peakLabel, buf);
     }
     lv_obj_align(peakLabel, LV_ALIGN_TOP_MID, 0, 6);
 
-    uint32_t lo, hi;
-    if (fft) {
-        lo = fftCenterKHz * 1000 - SPECTRUM_FFT_SPAN_HZ / 2;
-        hi = lo + SPECTRUM_FFT_SPAN_HZ;
-        lv_label_set_text(modeLabel, "FFT  +-62.5 kHz  (tap: back)");
-    } else {
-        lo = startKHz[range] * 1000;
-        hi = lo + columns() * stepKHz * 1000;
-        lv_label_set_text(modeLabel, "");
-    }
-    formatHz(f, sizeof(f), lo, fft);
+    const uint32_t lo = startKHz[range] * 1000, hi = lo + columns() * stepKHz * 1000;
+    formatHz(f, sizeof(f), lo);
     lv_label_set_text(edgeLabel[0], f);
-    formatHz(f, sizeof(f), hi, fft);
+    formatHz(f, sizeof(f), hi);
     lv_label_set_text(edgeLabel[1], f);
     lv_obj_align(edgeLabel[1], LV_ALIGN_TOP_RIGHT, -2, Y_FREQ);
-    lv_obj_align(modeLabel, LV_ALIGN_TOP_MID, 0, Y_FREQ);
+    formatHz(f, sizeof(f), lo / 2 + hi / 2);
+    lv_label_set_text(centerLabel, f);
+    lv_obj_align(centerLabel, LV_ALIGN_TOP_MID, 0, Y_FREQ);
 }
 
 void SpectrumScreen::onTouch(lv_event_t *e)
@@ -543,39 +523,29 @@ void SpectrumScreen::onTouch(lv_event_t *e)
     lv_point_t p = {0, 0};
     if (lv_indev_active())
         lv_indev_get_point(lv_indev_active(), &p);
-    const bool fft = mode == SPECTRUM_FFT;
 
     if (code == LV_EVENT_PRESSED) {
         self->pressed = true;
         self->dragged = false;
         self->pressX = p.x;
         self->appliedPx = 0;
-        self->pressStartKHz = fft ? fftCenterKHz : startKHz[range];
+        self->pressStartKHz = startKHz[range];
         return;
     }
     if (!self->pressed)
         return;
 
+    // swipe: move the window by whole columns, the waterfall history moves along
     const int dx = p.x - self->pressX;
     if (code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED) {
         if (!self->dragged && (dx > TAP_PX || dx < -TAP_PX))
             self->dragged = true;
         if (self->dragged) {
-            int movedPx; // what the window really moved, in pixels
-            if (fft) {
-                // SPECTRUM_FFT_SPAN_HZ over the screen width, 1 kHz resolution
-                const int32_t c = (int32_t)self->pressStartKHz - dx * (int32_t)(SPECTRUM_FFT_SPAN_HZ / 1000) / W;
-                const uint32_t lo = spectrumRangeLoKHz(range) + SPECTRUM_FFT_SPAN_HZ / 2000,
-                               hi = spectrumRangeHiKHz(range) - SPECTRUM_FFT_SPAN_HZ / 2000;
-                fftCenterKHz = c < (int32_t)lo ? lo : (c > (int32_t)hi ? hi : (uint32_t)c);
-                movedPx = ((int32_t)self->pressStartKHz - (int32_t)fftCenterKHz) * W / (int32_t)(SPECTRUM_FFT_SPAN_HZ / 1000);
-            } else {
-                const int n = self->columns();
-                const int cols = dx * n / W; // whole columns
-                startKHz[range] = spectrumClampStartKHz(range, stepKHz, (int64_t)self->pressStartKHz - (int64_t)cols * stepKHz);
-                const int moved = ((int32_t)self->pressStartKHz - (int32_t)startKHz[range]) / (int32_t)stepKHz;
-                movedPx = moved * W / n;
-            }
+            const int n = self->columns();
+            const int cols = dx * n / W;
+            startKHz[range] = spectrumClampStartKHz(range, stepKHz, (int64_t)self->pressStartKHz - (int64_t)cols * stepKHz);
+            const int moved = ((int32_t)self->pressStartKHz - (int32_t)startKHz[range]) / (int32_t)stepKHz;
+            const int movedPx = moved * W / n;
             self->shiftWaterfall(movedPx - self->appliedPx);
             self->appliedPx = movedPx;
             // follow the finger, but do not restart the scan more than ~6 times a second
@@ -585,21 +555,6 @@ void SpectrumScreen::onTouch(lv_event_t *e)
             }
             self->updateLabels();
         }
-    }
-    if (code == LV_EVENT_RELEASED && !self->dragged) {
-        // tap: FFT around the tapped frequency, or back to the sweep
-        if (fft) {
-            mode = SPECTRUM_SWEEP;
-        } else {
-            const int n = self->columns();
-            const int col = p.x * n / W;
-            fftCenterKHz = startKHz[range] + col * stepKHz + stepKHz / 2;
-            mode = SPECTRUM_FFT;
-        }
-        self->clearWaterfall();
-        self->lastSweeps = 0;
-        self->requestScan();
-        self->updateLabels();
     }
     if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST)
         self->pressed = false;
@@ -616,7 +571,6 @@ void SpectrumScreen::onSettingsDone(lv_event_t *e)
 {
     SpectrumScreen *self = static_cast<SpectrumScreen *>(lv_event_get_user_data(e));
     lv_obj_add_flag(self->settings, LV_OBJ_FLAG_HIDDEN);
-    mode = SPECTRUM_SWEEP;
     startKHz[range] = spectrumClampStartKHz(range, stepKHz, startKHz[range]);
     self->clearWaterfall();
     self->lastSweeps = 0;

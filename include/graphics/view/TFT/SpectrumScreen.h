@@ -7,7 +7,7 @@
 
 /**
  * Spectrum analyzer screen (320x240): spectrum and waterfall of a sweep window (one column per step, swipe to move
- * it) or, after a tap, an FFT around the tapped frequency. The mesh is paused while it scans.
+ * it). The mesh is paused while it scans.
  */
 class SpectrumScreen
 {
@@ -57,7 +57,7 @@ class SpectrumScreen
     lv_obj_t *chart = nullptr;
     lv_obj_t *waterfall = nullptr;
     lv_obj_t *edgeLabel[2] = {};
-    lv_obj_t *modeLabel = nullptr;
+    lv_obj_t *centerLabel = nullptr;
     lv_obj_t *settings = nullptr;
     lv_obj_t *rangeMatrix = nullptr;
     lv_obj_t *stepMatrix = nullptr;
@@ -74,11 +74,11 @@ class SpectrumScreen
     uint16_t lastProgress = 0;
     uint32_t lastRequestMs = 0;
 
-    // touch: swipe moves the window, a tap switches between sweep and FFT
+    // touch: swipe moves the window
     bool pressed = false;
     bool dragged = false;
     int pressX = 0;
-    uint32_t pressStartKHz = 0;  // sweep window start / FFT center when the finger went down
+    uint32_t pressStartKHz = 0;  // sweep window start when the finger went down
     int appliedPx = 0;           // waterfall shift already applied during this drag
     uint32_t lastDragRequestMs = 0;
 
@@ -87,11 +87,9 @@ class SpectrumScreen
     uint32_t holdStartMs = 0;
 
     // settings, kept while the device runs
-    static uint8_t mode;
     static uint8_t range;
     static uint16_t stepKHz;
     static uint32_t startKHz[2]; // per range
-    static uint32_t fftCenterKHz;
     static int16_t dbLow, dbHigh;
     static bool showMax;
     static uint8_t holdSec;
