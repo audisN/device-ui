@@ -455,6 +455,9 @@ class TFTView_320x240 : public MeshtasticView, private NodeListActionSink
     static void ui_event_role_button(lv_event_t *e);
     static void ui_event_region_button(lv_event_t *e);
     static void ui_event_preset_button(lv_event_t *e);
+#ifdef HAS_SPECTRUM
+    void createSpectrumButton(void);
+#endif
 #ifdef DEVICEUI_TX_OPTIONS
     // board option: TX power 0.5 W / 1 W and duty cycle limit on / off (firmware TX_POWER_ABOVE_REGION_LIMIT)
     static void ui_event_tx_options_button(lv_event_t *e);
