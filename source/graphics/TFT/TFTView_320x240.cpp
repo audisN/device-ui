@@ -665,6 +665,9 @@ void TFTView_320x240::init_screens(void)
 #ifdef HAS_SPECTRUM
     createSpectrumButton();
 #endif
+#ifdef DEVICEUI_HIDE_SIGNAL_SCANNER
+    lv_obj_add_flag(objects.tools_signal_scanner_button, LV_OBJ_FLAG_HIDDEN); // board option: tool not wanted
+#endif
     if (hasTouchInput()) {
         // touch: the map pans with the finger, no arrow pad
         for (lv_obj_t *o : {objects.arrow_up_button, objects.arrow_down_button, objects.arrow_left_button,
