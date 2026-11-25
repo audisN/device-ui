@@ -125,6 +125,11 @@ class TFTView_320x240 : public MeshtasticView, private NodeListActionSink
     bool hasKnownNodeForPacket(uint32_t nodeNum) const override;
 
     const NodeRecord *nodeRecord(NodeId id) const { return nodeStore.find(id); }
+#ifdef HAS_OWN_RELAY_API
+    void checkOwnRelay(void);
+    uint32_t ownRelaySeen = 0;
+    uint32_t detectorStartCount = 0;
+#endif
 
     enum BasicSettings {
         eNone,

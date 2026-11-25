@@ -36,6 +36,9 @@
 #include "ui.h"
 #include "util/About.h"
 #include "util/FileLoader.h"
+#ifdef HAS_OWN_RELAY_API
+#include "mesh/OwnRelayApi.h"
+#endif
 #include "util/ILog.h"
 #include "util/ISpiLock.h"
 #include "util/KeyFingerprint.h"
@@ -4376,6 +4379,14 @@ void TFTView_320x240::ui_event_mesh_detector_start(_lv_event_t *e)
         lv_obj_add_flag(objects.detector_radar_panel, LV_OBJ_FLAG_HIDDEN);
     }
     THIS->detectorRunning = !THIS->detectorRunning;
+#ifdef HAS_OWN_RELAY_API
+    {
+        // only rebroadcasts heard after Start count
+        OwnRelayHeard r;
+        THIS->detectorStartCount = ownRelayHeardGet(&r) ? r.count : 0;
+        THIS->ownRelaySeen = THIS->detectorStartCount;
+    }
+#endif
     THIS->controller->sendPing();
 }
 
@@ -4586,6 +4597,45 @@ void TFTView_320x240::ui_event_packet_log(lv_event_t *e)
         lv_obj_clean(objects.tools_packet_log_panel);
     }
 }
+
+#ifdef HAS_OWN_RELAY_API
+// A neighbour rebroadcast our ping: it heard us and we heard it, so that is a two-way contact too. Meshtastic nodes
+// often skip the NodeInfo reply the detector waits for (they heard us < 12 h ago or sent their own < 30 min ago).
+void TFTView_320x240::checkOwnRelay(void)
+{
+    OwnRelayHeard r;
+    if (!ownRelayHeardGet(&r) || r.count == ownRelaySeen)
+        return;
+    ownRelaySeen = r.count;
+    // the relay is only the last byte of the node number: take the matching known node
+    uint32_t node = 0;
+    for (const auto &it : nodes)
+        if (it.first != ownNode && (it.first & 0xff) == r.relay) {
+            node = it.first;
+            break;
+        }
+    ILOG_INFO("Mesh detector: our ping relayed by 0x%02x (node !%08x), rssi %d snr %.1f", r.relay, node, r.rssi, r.snr);
+    detectorRunning = false;
+    lv_label_set_text(objects.detector_start_label, _("Start"));
+    lv_anim_del(&objects.radar_beam, ui_anim_radar_cb);
+    lv_obj_add_flag(objects.detector_radar_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(objects.detector_heard_label, LV_OBJ_FLAG_HIDDEN);
+    char buf[80];
+    if (node) {
+        const NodeRecord *record = nodeRecord(node);
+        setNodeImage(node, record ? (MeshtasticView::eRole)record->user.role : eRole::unknown, record && record->unmessagable,
+                     objects.detector_contact_image);
+        const char *shortName = nodeShortName(node);
+        const char *lbl = nodeDisplayName(node);
+        lv_snprintf(buf, sizeof(buf), "%.4s(%04x) relay\n%s\n%d dBm  SNR %.1f", shortName ? shortName : "", node & 0xffff,
+                    lbl ? lbl : "", r.rssi, r.snr);
+    } else {
+        lv_snprintf(buf, sizeof(buf), "relay ..%02x\n%d dBm  SNR %.1f", r.relay, r.rssi, r.snr);
+    }
+    lv_label_set_text(objects.detector_contact_label, buf);
+    lv_obj_clear_flag(objects.detector_contact_button, LV_OBJ_FLAG_HIDDEN);
+}
+#endif
 
 void TFTView_320x240::packetDetected(const meshtastic_MeshPacket &p)
 {
@@ -9205,6 +9255,10 @@ void TFTView_320x240::task_handler(void)
             map->task_handler();
 
         if (curtime - lastrun1 >= 1) { // call every 1s
+#ifdef HAS_OWN_RELAY_API
+            if (detectorRunning)
+                checkOwnRelay();
+#endif
             if (map) {
                 updateLocationMap(THIS->map->getObjectsOnMap());
             }
