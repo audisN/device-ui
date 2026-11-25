@@ -4627,7 +4627,7 @@ void TFTView_320x240::checkOwnRelay(void)
             node = it.first;
             break;
         }
-    ILOG_INFO("Mesh detector: our ping relayed by 0x%02x (node !%08x), rssi %d snr %.1f", r.relay, node, r.rssi, r.snr);
+    ILOG_DEBUG("Mesh detector: our ping relayed by 0x%02x (node !%08x), rssi %d snr %.1f", r.relay, node, r.rssi, r.snr);
     detectorRunning = false;
     lv_label_set_text(objects.detector_start_label, _("Start"));
     lv_anim_delete(objects.radar_beam, ui_anim_radar_cb);

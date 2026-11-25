@@ -2,7 +2,6 @@
 
 #include "graphics/view/TFT/SpectrumScreen.h"
 #include "fonts.h"
-#include "util/ILog.h"
 #include <string.h>
 
 SpectrumScreen *SpectrumScreen::current = nullptr;
@@ -564,7 +563,7 @@ void SpectrumScreen::onTouch(lv_event_t *e)
         if (self->dragged) {
             int movedPx; // what the window really moved, in pixels
             if (fft) {
-                // 250 kHz over 320 px, 1 kHz resolution
+                // SPECTRUM_FFT_SPAN_HZ over the screen width, 1 kHz resolution
                 const int32_t c = (int32_t)self->pressStartKHz - dx * (int32_t)(SPECTRUM_FFT_SPAN_HZ / 1000) / W;
                 const uint32_t lo = spectrumRangeLoKHz(range) + SPECTRUM_FFT_SPAN_HZ / 2000,
                                hi = spectrumRangeHiKHz(range) - SPECTRUM_FFT_SPAN_HZ / 2000;
@@ -597,7 +596,6 @@ void SpectrumScreen::onTouch(lv_event_t *e)
             fftCenterKHz = startKHz[range] + col * stepKHz + stepKHz / 2;
             mode = SPECTRUM_FFT;
         }
-        ILOG_INFO("Spectrum UI: %s at x=%d", mode == SPECTRUM_FFT ? "FFT" : "sweep", (int)p.x);
         self->clearWaterfall();
         self->lastSweeps = 0;
         self->requestScan();
@@ -640,7 +638,9 @@ void SpectrumScreen::onStep(lv_event_t *e)
     // keep the middle of the window where it is
     for (uint8_t r = 0; r < 2; r++) {
         const uint32_t mid = startKHz[r] + spectrumColumns(r, stepKHz) * stepKHz / 2;
-        startKHz[r] = spectrumClampStartKHz(r, newStep, (int64_t)mid - (int64_t)spectrumColumns(r, newStep) * newStep / 2);
+        const int64_t start = (int64_t)mid - (int64_t)spectrumColumns(r, newStep) * newStep / 2;
+        // on the step grid (the range edges are), so moving the window shifts whole columns
+        startKHz[r] = spectrumClampStartKHz(r, newStep, start - start % newStep);
     }
     stepKHz = newStep;
 }
