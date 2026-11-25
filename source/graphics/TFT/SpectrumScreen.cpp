@@ -566,7 +566,8 @@ void SpectrumScreen::onTouch(lv_event_t *e)
             if (fft) {
                 // 250 kHz over 320 px, 1 kHz resolution
                 const int32_t c = (int32_t)self->pressStartKHz - dx * (int32_t)(SPECTRUM_FFT_SPAN_HZ / 1000) / W;
-                const uint32_t lo = spectrumRangeLoKHz(SPECTRUM_RANGE_SUBGHZ), hi = spectrumRangeHiKHz(SPECTRUM_RANGE_HF);
+                const uint32_t lo = spectrumRangeLoKHz(range) + SPECTRUM_FFT_SPAN_HZ / 2000,
+                               hi = spectrumRangeHiKHz(range) - SPECTRUM_FFT_SPAN_HZ / 2000;
                 fftCenterKHz = c < (int32_t)lo ? lo : (c > (int32_t)hi ? hi : (uint32_t)c);
                 movedPx = ((int32_t)self->pressStartKHz - (int32_t)fftCenterKHz) * W / (int32_t)(SPECTRUM_FFT_SPAN_HZ / 1000);
             } else {

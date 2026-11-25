@@ -665,6 +665,12 @@ void TFTView_320x240::init_screens(void)
 #ifdef HAS_SPECTRUM
     createSpectrumButton();
 #endif
+    if (hasTouchInput()) {
+        // touch: the map pans with the finger, no arrow pad
+        for (lv_obj_t *o : {objects.arrow_up_button, objects.arrow_down_button, objects.arrow_left_button,
+                            objects.arrow_right_button, objects.nav_button})
+            lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    }
 
     // load main screen
     lv_screen_load_anim(objects.main_screen, LV_SCR_LOAD_ANIM_NONE, 300, 0, false);
@@ -1975,18 +1981,25 @@ void TFTView_320x240::setMapInputState(input_policy::FocusSemantic semantic)
     input_policy::InputContextState::instance().setFocusSemantic(semantic);
 }
 
+bool TFTView_320x240::hasTouchInput(void)
+{
+    return displaydriver->hasTouch() || (inputdriver && inputdriver->hasPointerDevice());
+}
+
 void TFTView_320x240::showMapControls(bool show)
 {
+    // with a touch screen the map pans with the finger: no arrow buttons
+    const bool arrows = show && !hasTouchInput();
     const bool hasGps = db.config.position.gps_mode != meshtastic_Config_PositionConfig_GpsMode_NOT_PRESENT;
     lv_obj_set_flag(objects.navigation_panel, LV_OBJ_FLAG_HIDDEN, !show);
     lv_obj_set_flag(objects.zoom_in_button, LV_OBJ_FLAG_HIDDEN, !show);
     lv_obj_set_flag(objects.zoom_out_button, LV_OBJ_FLAG_HIDDEN, !show);
     lv_obj_set_flag(objects.gps_lock_button, LV_OBJ_FLAG_HIDDEN, !show || !hasGps);
-    lv_obj_set_flag(objects.arrow_up_button, LV_OBJ_FLAG_HIDDEN, !show);
-    lv_obj_set_flag(objects.arrow_left_button, LV_OBJ_FLAG_HIDDEN, !show);
-    lv_obj_set_flag(objects.nav_button, LV_OBJ_FLAG_HIDDEN, !show);
-    lv_obj_set_flag(objects.arrow_right_button, LV_OBJ_FLAG_HIDDEN, !show);
-    lv_obj_set_flag(objects.arrow_down_button, LV_OBJ_FLAG_HIDDEN, !show);
+    lv_obj_set_flag(objects.arrow_up_button, LV_OBJ_FLAG_HIDDEN, !arrows);
+    lv_obj_set_flag(objects.arrow_left_button, LV_OBJ_FLAG_HIDDEN, !arrows);
+    lv_obj_set_flag(objects.nav_button, LV_OBJ_FLAG_HIDDEN, !arrows);
+    lv_obj_set_flag(objects.arrow_right_button, LV_OBJ_FLAG_HIDDEN, !arrows);
+    lv_obj_set_flag(objects.arrow_down_button, LV_OBJ_FLAG_HIDDEN, !arrows);
     if (!show)
         lv_obj_add_flag(objects.zoom_slider, LV_OBJ_FLAG_HIDDEN);
 }
@@ -4375,7 +4388,7 @@ void TFTView_320x240::ui_event_mesh_detector_start(_lv_event_t *e)
         lv_obj_clear_flag(objects.detector_radar_panel, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_label_set_text(objects.detector_start_label, _("Start"));
-        lv_anim_del(&objects.radar_beam, ui_anim_radar_cb);
+        lv_anim_delete(objects.radar_beam, ui_anim_radar_cb);
         lv_obj_add_flag(objects.detector_radar_panel, LV_OBJ_FLAG_HIDDEN);
     }
     THIS->detectorRunning = !THIS->detectorRunning;
@@ -4617,7 +4630,7 @@ void TFTView_320x240::checkOwnRelay(void)
     ILOG_INFO("Mesh detector: our ping relayed by 0x%02x (node !%08x), rssi %d snr %.1f", r.relay, node, r.rssi, r.snr);
     detectorRunning = false;
     lv_label_set_text(objects.detector_start_label, _("Start"));
-    lv_anim_del(&objects.radar_beam, ui_anim_radar_cb);
+    lv_anim_delete(objects.radar_beam, ui_anim_radar_cb);
     lv_obj_add_flag(objects.detector_radar_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(objects.detector_heard_label, LV_OBJ_FLAG_HIDDEN);
     char buf[80];
@@ -4650,7 +4663,7 @@ void TFTView_320x240::packetDetected(const meshtastic_MeshPacket &p)
             // we finally sensed a two-way contact to us; stop the detector
             detectorRunning = false;
             lv_label_set_text(objects.detector_start_label, _("Start"));
-            lv_anim_del(&objects.radar_beam, ui_anim_radar_cb);
+            lv_anim_delete(objects.radar_beam, ui_anim_radar_cb);
             lv_obj_add_flag(objects.detector_radar_panel, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(objects.detector_heard_label, LV_OBJ_FLAG_HIDDEN);
 
