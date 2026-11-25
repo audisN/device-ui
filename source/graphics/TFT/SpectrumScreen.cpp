@@ -139,11 +139,19 @@ void SpectrumScreen::open(lv_obj_t *returnScreen)
     if (current)
         return;
     current = new SpectrumScreen(returnScreen);
+    if (!current->screen) { // no memory for the canvases
+        delete current;
+        current = nullptr;
+    }
 }
 
 SpectrumScreen::SpectrumScreen(lv_obj_t *returnScreen) : returnScreen(returnScreen)
 {
     memset(&frame, 0, sizeof(frame));
+    chartBuf = (uint16_t *)lv_malloc(W * H_CHART * sizeof(uint16_t));
+    waterfallBuf = (uint16_t *)lv_malloc(W * H_WF * sizeof(uint16_t));
+    if (!chartBuf || !waterfallBuf)
+        return;
     buildLut();
     build();
     lv_screen_load(screen);
@@ -155,7 +163,8 @@ SpectrumScreen::~SpectrumScreen()
 {
     if (timer)
         lv_timer_delete(timer);
-    lv_obj_delete(screen);
+    if (screen)
+        lv_obj_delete(screen);
     lv_free(chartBuf);
     lv_free(waterfallBuf);
 }
@@ -185,7 +194,6 @@ void SpectrumScreen::build(void)
     lv_obj_align(exit, LV_ALIGN_TOP_RIGHT, -2, 2);
 
     // spectrum
-    chartBuf = (uint16_t *)lv_malloc(W * H_CHART * sizeof(uint16_t));
     chart = lv_canvas_create(screen);
     lv_canvas_set_buffer(chart, chartBuf, W, H_CHART, LV_COLOR_FORMAT_RGB565);
     lv_obj_set_pos(chart, 0, Y_CHART);
@@ -193,7 +201,6 @@ void SpectrumScreen::build(void)
         chartBuf[i] = rgb565(C_BG);
 
     // waterfall
-    waterfallBuf = (uint16_t *)lv_malloc(W * H_WF * sizeof(uint16_t));
     waterfall = lv_canvas_create(screen);
     lv_canvas_set_buffer(waterfall, waterfallBuf, W, H_WF, LV_COLOR_FORMAT_RGB565);
     lv_obj_set_pos(waterfall, 0, Y_WF);
