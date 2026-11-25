@@ -7,7 +7,8 @@
 SpectrumScreen *SpectrumScreen::current = nullptr;
 uint8_t SpectrumScreen::range = SPECTRUM_RANGE_SUBGHZ;
 uint16_t SpectrumScreen::stepKHz = 1000;
-uint32_t SpectrumScreen::startKHz[2] = {790000, 1500000};
+// windows centred on 868 MHz and 2450 MHz at the default 1 MHz step (320 columns)
+uint32_t SpectrumScreen::startKHz[2] = {868000 - 160000, 2450000 - 160000};
 uint8_t SpectrumScreen::holdSec = 2;
 bool SpectrumScreen::showMax = false;
 int16_t SpectrumScreen::dbLow = -120;
