@@ -19,6 +19,9 @@
 #include "graphics/view/TFT/DropdownKeyNavigation.h"
 #include "graphics/view/TFT/TFTView_Debug.h"
 #ifdef HAS_SPECTRUM
+#ifdef HAS_SIGNAL_FINDER
+#include "graphics/view/TFT/SignalFinderScreen.h"
+#endif
 #include "graphics/view/TFT/SpectrumScreen.h"
 #endif
 #include "graphics/view/TFT/Themes.h"
@@ -2988,29 +2991,36 @@ void TFTView_320x240::ui_event_tx_options_close(lv_event_t *e)
 #ifdef HAS_SPECTRUM
 void TFTView_320x240::createSpectrumButton(void)
 {
-    // Tools tab entry right below "Signal Scanner"
-    lv_obj_t *scannerButton = objects.tools_signal_scanner_button;
-    lv_obj_t *button = lv_button_create(lv_obj_get_parent(scannerButton));
-    lv_obj_move_to_index(button, lv_obj_get_index(scannerButton) + 1);
-    lv_obj_set_size(button, LV_PCT(95), 30);
-    lv_obj_add_flag(button, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_remove_flag(button, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
-    add_style_settings_button_style(button);
-    lv_obj_set_style_align(button, LV_ALIGN_TOP_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(button, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x4db270), LV_PART_MAIN | LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(button, lv_color_hex(0x015114), LV_PART_MAIN | LV_STATE_PRESSED);
-    lv_obj_t *label = lv_label_create(button);
-    lv_obj_set_size(label, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_align(label, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_label_set_text(label, "Spectrum analyzer");
-    lv_obj_add_event_cb(
-        button,
-        [](lv_event_t *e) {
-            if (lv_event_get_code(e) == LV_EVENT_CLICKED && THIS->activeSettings == eNone)
-                SpectrumScreen::open(objects.main_screen);
-        },
-        LV_EVENT_CLICKED, NULL);
+    // Tools tab entries right below "Signal Scanner"
+    auto addTool = [](int index, const char *text, lv_event_cb_t cb) {
+        lv_obj_t *scannerButton = objects.tools_signal_scanner_button;
+        lv_obj_t *button = lv_button_create(lv_obj_get_parent(scannerButton));
+        lv_obj_move_to_index(button, index);
+        lv_obj_set_size(button, LV_PCT(95), 30);
+        lv_obj_add_flag(button, LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_remove_flag(button, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+        add_style_settings_button_style(button);
+        lv_obj_set_style_align(button, LV_ALIGN_TOP_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_width(button, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(button, lv_color_hex(0x4db270), LV_PART_MAIN | LV_STATE_PRESSED);
+        lv_obj_set_style_text_color(button, lv_color_hex(0x015114), LV_PART_MAIN | LV_STATE_PRESSED);
+        lv_obj_t *label = lv_label_create(button);
+        lv_obj_set_size(label, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_set_style_align(label, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_label_set_text(label, text);
+        lv_obj_add_event_cb(button, cb, LV_EVENT_CLICKED, NULL);
+    };
+    const int index = lv_obj_get_index(objects.tools_signal_scanner_button) + 1;
+    addTool(index, "Spectrum analyzer", [](lv_event_t *e) {
+        if (lv_event_get_code(e) == LV_EVENT_CLICKED && THIS->activeSettings == eNone)
+            SpectrumScreen::open(objects.main_screen);
+    });
+#ifdef HAS_SIGNAL_FINDER // work in progress, off by default
+    addTool(index + 1, "Signal finder", [](lv_event_t *e) {
+        if (lv_event_get_code(e) == LV_EVENT_CLICKED && THIS->activeSettings == eNone)
+            SignalFinderScreen::open(objects.main_screen);
+    });
+#endif
 }
 #endif
 
