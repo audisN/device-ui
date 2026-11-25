@@ -2,14 +2,23 @@
 #include "lv_conf.h"
 #include "lvgl.h"
 
-uint8_t MapTileSettings::zoomLevel = 13;   // current zoomLevel
-uint8_t MapTileSettings::zoomDefault = 13; // default for initial or home position
+// a board may set the map center used while the node has no position (MAP_DEFAULT_LAT/LON/ZOOM)
+#ifndef MAP_DEFAULT_ZOOM
+#define MAP_DEFAULT_ZOOM 13
+#endif
+#ifndef MAP_DEFAULT_LAT
+#define MAP_DEFAULT_LAT 51.5003646652f // @theBigBentern
+#define MAP_DEFAULT_LON -0.1214328476f
+#endif
+
+uint8_t MapTileSettings::zoomLevel = MAP_DEFAULT_ZOOM;   // current zoomLevel
+uint8_t MapTileSettings::zoomDefault = MAP_DEFAULT_ZOOM; // default for initial or home position
 uint16_t MapTileSettings::tileSize = 256;
 int16_t MapTileSettings::tileProviderId = -1;       // default url index to load from (backup service)
 uint32_t MapTileSettings::cacheSize = 50 * 1024;    // LV_FS_CACHE_FROM_BUFFER
 uint32_t MapTileSettings::uniqueId = 0xFFFFFFFF;    // to be updated with node number
-float MapTileSettings::defaultLat = 51.5003646652f; // @theBigBentern
-float MapTileSettings::defaultLon = -0.1214328476f;
+float MapTileSettings::defaultLat = MAP_DEFAULT_LAT;
+float MapTileSettings::defaultLon = MAP_DEFAULT_LON;
 char MapTileSettings::prefix[MapTileSettings::PREFIX_SIZE] = "/maps";        // default map tile directory
 char MapTileSettings::tileStyle[MapTileSettings::TILE_STYLE_SIZE] = "";      // { osm/, atlas/, ...}
 char MapTileSettings::tileDir[MapTileSettings::TILE_STYLE_SIZE] = "";        // tileStyle without legacy .pmtiles extension

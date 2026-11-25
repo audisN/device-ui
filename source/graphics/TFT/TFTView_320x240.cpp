@@ -4030,8 +4030,8 @@ void TFTView_320x240::loadMap(void)
         } else if (db.uiConfig.map_data.has_home) {
             map->setHomeLocation(db.uiConfig.map_data.home.latitude * 1e-7, db.uiConfig.map_data.home.longitude * 1e-7);
             map->setZoom(db.uiConfig.map_data.home.zoom);
-        } else if (nodeObjects.size() >= 1) {
-            // no gps, no saved position then center the home location among other available nodes
+        } else {
+            // no gps, no saved position then center the home location among other nodes that have a position
             std::vector<int32_t> sortedLat;
             std::vector<int32_t> sortedLon;
             sortedLat.reserve(nodeObjects.size());
@@ -4043,31 +4043,42 @@ void TFTView_320x240::loadMap(void)
                     sortedLon.push_back(position.longitude);
                 }
             }
-            std::sort(sortedLat.begin(), sortedLat.end());
-            std::sort(sortedLon.begin(), sortedLon.end());
-            int64_t latcenter = 0;
-            int64_t loncenter = 0;
-            int32_t count = 0;
-            // select just the closest 60% of nodes, ignore the rest
-            int pp = 100 / 20;
-            for (int i = sortedLat.size() / pp; i < pp * sortedLat.size() / pp; i++) {
-                latcenter += sortedLat[i];
-                loncenter += sortedLon[i];
-                count++;
-            }
-            latcenter /= count;
-            loncenter /= count;
-            map->setHomeLocation(latcenter * 1e-7, loncenter * 1e-7);
+            if (!sortedLat.empty()) {
+                std::sort(sortedLat.begin(), sortedLat.end());
+                std::sort(sortedLon.begin(), sortedLon.end());
+                int64_t latcenter = 0;
+                int64_t loncenter = 0;
+                int32_t count = 0;
+                // select just the closest 60% of nodes, ignore the rest
+                int pp = 100 / 20;
+                for (int i = sortedLat.size() / pp; i < pp * sortedLat.size() / pp; i++) {
+                    latcenter += sortedLat[i];
+                    loncenter += sortedLon[i];
+                    count++;
+                }
+                if (count == 0) { // fewer nodes than the 60% window: use all of them
+                    for (size_t i = 0; i < sortedLat.size(); i++) {
+                        latcenter += sortedLat[i];
+                        loncenter += sortedLon[i];
+                    }
+                    count = sortedLat.size();
+                }
+                latcenter /= count;
+                loncenter /= count;
+                map->setHomeLocation(latcenter * 1e-7, loncenter * 1e-7);
 
-            // calculate optimal zoom factor to fit in all nodes of this range
-            lv_obj_update_layout(objects.raw_map_panel);
-            float rangeDeg = 1e-7 * (sortedLon[(pp - 1) * sortedLon.size() / pp] - sortedLon[sortedLon.size() / pp]);
-            float distanceKm = abs(rangeDeg * 111.32 * cos(1e-7 * sortedLat[sortedLat.size() / 2]));
-            uint32_t zoom = sqrt(156.543034f / distanceKm * abs(cos(1e-7 * sortedLat[sortedLat.size() / 2])) * 256) + 1;
-            map->setZoom(zoom);
-        } else {
-            // use default location @theBigBentern
-            map->setZoom(3);
+                // calculate optimal zoom factor to fit in all nodes of this range
+                lv_obj_update_layout(objects.raw_map_panel);
+                float rangeDeg = 1e-7 * (sortedLon[(pp - 1) * sortedLon.size() / pp] - sortedLon[sortedLon.size() / pp]);
+                float distanceKm = abs(rangeDeg * 111.32 * cos(1e-7 * sortedLat[sortedLat.size() / 2]));
+                uint32_t zoom = distanceKm > 0.01f
+                                    ? sqrt(156.543034f / distanceKm * abs(cos(1e-7 * sortedLat[sortedLat.size() / 2])) * 256) + 1
+                                    : MapTileSettings::getDefaultZoom();
+                map->setZoom(zoom);
+            } else {
+                // no node has a position: use the default location (board option MAP_DEFAULT_LAT/LON/ZOOM)
+                map->setZoom(MapTileSettings::getDefaultZoom());
+            }
         }
 
         if (db.uiConfig.map_data.follow_gps) {
