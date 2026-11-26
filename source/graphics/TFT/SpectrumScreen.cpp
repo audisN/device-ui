@@ -194,6 +194,17 @@ void SpectrumScreen::build(void)
     lv_obj_set_size(exit, 70, 22);
     lv_obj_align(exit, LV_ALIGN_TOP_RIGHT, -2, 2);
 
+    // header buttons act on press: a tap that moves a little, or whose release falls in a sweep, still counts;
+    // a larger hit area makes them easy to reach at the panel edge (the swipe area starts at Y_CHART)
+    lv_obj_t *hdr[] = {set, exit};
+    for (lv_obj_t *b : hdr) {
+        lv_event_cb_t cb = (b == set) ? onSettings : onExit;
+        lv_obj_remove_event_cb(b, cb);
+        lv_obj_add_event_cb(b, cb, LV_EVENT_PRESSED, this);
+        lv_obj_set_ext_click_area(b, 8);
+        lv_obj_remove_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    }
+
     // spectrum
     chart = lv_canvas_create(screen);
     lv_canvas_set_buffer(chart, chartBuf, W, H_CHART, LV_COLOR_FORMAT_RGB565);
