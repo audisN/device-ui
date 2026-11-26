@@ -369,6 +369,52 @@ template <class LGFX> void LGFXDriver<LGFX>::rounder_cb(lv_event_t *e)
 }
 #endif
 
+#if defined(FT5X06_TOUCH_THRESHOLD_PCT) && defined(LGFX_TOUCH_I2C_ADDR) && !defined(CUSTOM_TOUCH_DRIVER)
+// FocalTech ID_G_THGROUP (0x80): a lower touch threshold is more sensitive. The value is not kept over power-off, and
+// the bus only works once LovyanGFX has read the touch controller, so this runs from the touch read (bus held).
+static void tuneTouchThreshold(void)
+{
+    static uint8_t tries = 0;
+    static uint32_t firstMs = 0;
+    if (tries >= 20)
+        return;
+    if (!firstMs)
+        firstMs = millis() | 1;
+    if (millis() - firstMs < 3000) // the controller restarts after LovyanGFX pulses its reset
+        return;
+    tries++;
+    // same sequence as the LovyanGFX touch read, which works on this bus (transactionWriteRead reads zeros here)
+    constexpr int port = LGFX_TOUCH_I2C_PORT;
+    uint8_t buf[2] = {0x80, 0};
+    bool rd = false;
+    if (lgfx::i2c::beginTransaction(port, LGFX_TOUCH_I2C_ADDR, LGFX_TOUCH_I2C_FREQ, false)) {
+        rd = lgfx::i2c::writeBytes(port, buf, 1).has_value() && lgfx::i2c::restart(port, LGFX_TOUCH_I2C_ADDR, LGFX_TOUCH_I2C_FREQ, true).has_value() &&
+             lgfx::i2c::readBytes(port, &buf[1], 1).has_value();
+        lgfx::i2c::endTransaction(port).has_value();
+    }
+    uint8_t th = buf[1];
+    if (!rd || th == 0) {
+        if (tries == 20)
+            ILOG_WARN("touch threshold not readable, left as is");
+        return;
+    }
+    tries = 20;
+    uint8_t set = (uint32_t)th * FT5X06_TOUCH_THRESHOLD_PCT / 100;
+    if (set < 8)
+        set = 8;
+    bool ok = false;
+    if (lgfx::i2c::beginTransaction(port, LGFX_TOUCH_I2C_ADDR, LGFX_TOUCH_I2C_FREQ, false)) {
+        uint8_t w[2] = {0x80, set};
+        ok = lgfx::i2c::writeBytes(port, w, 2).has_value();
+        lgfx::i2c::endTransaction(port).has_value();
+    }
+    ILOG_INFO("touch threshold 0x%02x -> 0x%02x%s", th, set, ok ? "" : " (write failed)");
+}
+#define TUNE_TOUCH_THRESHOLD() tuneTouchThreshold()
+#else
+#define TUNE_TOUCH_THRESHOLD()
+#endif
+
 #if LV_USE_GESTURE_RECOGNITION && !defined(CUSTOM_TOUCH_DRIVER)
 #ifdef DEBUG_TOUCH_GESTURE
 #include "src/indev/lv_indev_gesture_private.h"
@@ -390,6 +436,7 @@ template <class LGFX> void LGFXDriver<LGFX>::touchpad_read(lv_indev_t *indev_dri
     {
         ISpiLock::Guard bus;
         count = lgfx->getTouch(tp, maxPoints);
+        TUNE_TOUCH_THRESHOLD();
     }
 
     // recognizers count fingers by id, so a lifted finger must be reported once as released
@@ -462,6 +509,7 @@ template <class LGFX> void LGFXDriver<LGFX>::touchpad_read(lv_indev_t *indev_dri
     {
         ISpiLock::Guard bus;
         touched = lgfx->getTouch(&touchX, &touchY);
+        TUNE_TOUCH_THRESHOLD();
     }
 #endif
     if (!touched) {
