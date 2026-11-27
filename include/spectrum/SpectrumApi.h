@@ -5,11 +5,30 @@
 //
 // Sweep: the visible window is up to SPECTRUM_MAX_BINS columns of one step each. Each column holds the strongest
 // reading inside its step (measured every 250 kHz with a 250 kHz filter; the 125 kHz step uses 125 kHz).
+// FFT: 128 bins around one frequency, computed on the radio chip. Its 256-point FFT covers 4x the channel filter,
+// and only the middle half passes the filter: wide = 125 kHz (filter 62.5 kHz, ~977 Hz bins), narrow = 62.5 kHz
+// (filter 31.25 kHz, ~488 Hz bins).
 
 #include <stdint.h>
 
 #define SPECTRUM_MAX_BINS 320
+#define SPECTRUM_FFT_BINS 128
+#define SPECTRUM_FFT_SPAN_HZ 125000UL // wide
 #define SPECTRUM_NO_DATA INT16_MIN
+
+enum SpectrumMode : uint8_t {
+    SPECTRUM_SWEEP = 0,
+    SPECTRUM_FFT = 1,
+};
+
+enum SpectrumFftSpan : uint8_t {
+    SPECTRUM_FFT_WIDE = 0,   // 125 kHz
+    SPECTRUM_FFT_NARROW = 1, // 62.5 kHz
+};
+inline uint32_t spectrumFftSpanHz(uint8_t span)
+{
+    return span == SPECTRUM_FFT_NARROW ? SPECTRUM_FFT_SPAN_HZ / 2 : SPECTRUM_FFT_SPAN_HZ;
+}
 
 enum SpectrumRange : uint8_t {
     SPECTRUM_RANGE_SUBGHZ = 0, // 150 - 1200 MHz (LF port)
@@ -39,22 +58,29 @@ inline uint32_t spectrumClampStartKHz(uint8_t range, uint16_t stepKHz, int64_t s
 }
 
 struct SpectrumFrame {
+    uint8_t mode;      // SpectrumMode
     uint8_t range;     // SpectrumRange (sweep)
     bool active;       // radio is scanning, mesh paused
     uint16_t bins;     // valid entries in data[]
     uint32_t startHz;  // frequency of the low edge of bin 0
     uint32_t binHz;    // width of one bin
-    uint32_t sweeps;   // completed sweeps
+    uint32_t centerHz; // FFT: center frequency (after the search on entry)
+    uint32_t requestKHz; // FFT: the centerKHz this frame answers
+    uint8_t span;      // FFT: SpectrumFftSpan
+    uint32_t sweeps;   // completed sweeps / FFT frames
     uint32_t sweepMs;  // duration of the last sweep
     uint16_t progress; // sweep: columns of the current sweep done so far
     int16_t peak;      // strongest reading of the last sweep / frame, 0.5 dB steps
     uint32_t peakHz;   // its frequency
-    // values in 0.5 dB steps (dBm * 2), SPECTRUM_NO_DATA where not measured
+    // values in 0.5 dB steps (dBm * 2), SPECTRUM_NO_DATA where not measured; FFT values are estimated dBm
     int16_t data[SPECTRUM_MAX_BINS];
 };
 
 // Sweep the window startKHz .. startKHz + columns * stepKHz (stepKHz 125, 250, 500 or 1000).
 bool spectrumStartSweep(uint8_t range, uint16_t stepKHz, uint32_t startKHz);
+// FFT around centerKHz. With searchKHz > 0 the radio first looks for the strongest signal within
+// centerKHz +- (searchKHz / 2 + 150 kHz) and centres on it (frame.centerHz); the dBm scale is set there.
+bool spectrumStartFft(uint32_t centerKHz, uint32_t searchKHz, uint8_t span);
 // Stop scanning and resume the mesh.
 void spectrumStop(void);
 // Copy the latest data. The scan stops by itself if this is not called for 15 s.
